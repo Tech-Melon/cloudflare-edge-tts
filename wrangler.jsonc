@@ -3,6 +3,6 @@
   "name": "cloudflare-edge-tts",
   "main": "src/index.ts",
   "compatibility_date": "2026-04-10",
-  "account_id": "1f1d1678a2413a54c944b3081bab5c84",
+  "account_id": "cdf3fddb6fd780691ac13418dcb0888a",
   "workers_dev": true
 }

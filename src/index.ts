@@ -3,7 +3,7 @@ import { handleTts } from "./handlers/tts";
 import { handleVoices } from "./handlers/voices";
 import { errorResponse, noContent, withCors } from "./lib/http";
 
-async function routeRequest(request: Request) {
+async function routeRequest(request: Request, ctx: ExecutionContext) {
   const { pathname } = new URL(request.url);
 
   if (request.method === "OPTIONS") {
@@ -31,7 +31,7 @@ async function routeRequest(request: Request) {
       return errorResponse(405, "METHOD_NOT_ALLOWED", "method not allowed");
     }
 
-    return handleTts(request);
+    return handleTts(request, ctx);
   }
 
   return errorResponse(404, "NOT_FOUND", "route not found");
@@ -44,7 +44,7 @@ export default {
     _ctx: ExecutionContext
   ): Promise<Response> {
     try {
-      const response = await routeRequest(request);
+      const response = await routeRequest(request, _ctx);
       return withCors(response);
     } catch {
       return errorResponse(500, "INTERNAL_ERROR", "unexpected internal error");

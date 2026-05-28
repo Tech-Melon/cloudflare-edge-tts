@@ -52,6 +52,8 @@ export type Voice = {
 export type TtsInput = {
   text: string;
   voice?: string;
+  rate?: string;
+  pitch?: string;
 };
 
 export type TtsRuntime = {
@@ -162,10 +164,12 @@ function buildSpeechConfigMessage() {
   );
 }
 
-function buildSsmlMessage(requestId: string, voice: string, text: string) {
+function buildSsmlMessage(requestId: string, voice: string, text: string, rate?: string, pitch?: string) {
+  const finalRate = rate || '+0%';
+  const finalPitch = pitch || '+0Hz';
   const ssml =
     "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>" +
-    `<voice name='${voice}'><prosody pitch='+0Hz' rate='+0%' volume='+0%'>${escapeXml(
+    `<voice name='${voice}'><prosody pitch='${finalPitch}' rate='${finalRate}' volume='+0%'>${escapeXml(
       removeInvalidXmlCharacters(text)
     )}</prosody></voice></speak>`;
 
@@ -271,6 +275,8 @@ function createReadableAudioStream(
   socket: WebSocket,
   text: string,
   voice: string,
+  rate: string | undefined,
+  pitch: string | undefined,
   requestId: string
 ) {
   let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
@@ -399,7 +405,7 @@ function createReadableAudioStream(
       socket.addEventListener("error", onError);
       socket.accept();
       socket.send(buildSpeechConfigMessage());
-      socket.send(buildSsmlMessage(requestId, voice, text));
+      socket.send(buildSsmlMessage(requestId, voice, text, rate, pitch));
     },
     cancel(reason) {
       cleanup();
@@ -414,7 +420,7 @@ function createReadableAudioStream(
 }
 
 export async function createAudioStream(
-  { text, voice }: TtsInput,
+  { text, voice, rate, pitch }: TtsInput,
   runtime: TtsRuntime = defaultRuntime()
 ): Promise<ReadableStream<Uint8Array>> {
   const secMsGec = await makeSecMsGec(runtime);
@@ -435,6 +441,8 @@ export async function createAudioStream(
     response.webSocket,
     text,
     normalizeVoiceName(voice ?? DEFAULT_VOICE),
+    rate,
+    pitch,
     makeConnectionId(runtime)
   );
 }

@@ -4,6 +4,8 @@ import { CORS_HEADERS, errorResponse } from "../lib/http";
 type TtsBody = {
   text?: unknown;
   voice?: unknown;
+  rate?: unknown;
+  pitch?: unknown;
 };
 
 function isJsonContentType(value: string) {
@@ -16,7 +18,7 @@ function parseBody(body: unknown) {
     throw new Error("request body must be an object");
   }
 
-  const { text, voice } = body as TtsBody;
+  const { text, voice, rate, pitch } = body as TtsBody;
 
   if (typeof text !== "string" || text.trim().length === 0) {
     throw new Error("text is required");
@@ -32,9 +34,19 @@ function parseBody(body: unknown) {
     }
   }
 
+  if (rate !== undefined && typeof rate !== "string") {
+    throw new Error("rate must be a string");
+  }
+
+  if (pitch !== undefined && typeof pitch !== "string") {
+    throw new Error("pitch must be a string");
+  }
+
   return {
     text: text.trim(),
     voice: typeof voice === "string" ? voice.trim() : voice,
+    rate: typeof rate === "string" ? rate.trim() : rate,
+    pitch: typeof pitch === "string" ? pitch.trim() : pitch,
   };
 }
 
@@ -75,7 +87,7 @@ async function primeAudioStream(stream: ReadableStream<Uint8Array>) {
   });
 }
 
-export async function handleTts(request: Request) {
+export async function handleTts(request: Request, ctx: ExecutionContext) {
   const contentType = request.headers.get("content-type") ?? "";
   if (!isJsonContentType(contentType)) {
     return errorResponse(
@@ -109,17 +121,43 @@ export async function handleTts(request: Request) {
     );
   }
 
+  // 构建 Cache Key: 使用 GET 方法的 URL 加上 text, voice, rate, pitch 参数
+  const cacheUrl = new URL(request.url);
+  cacheUrl.searchParams.set("text", parsed.text);
+  cacheUrl.searchParams.set("voice", parsed.voice || "default");
+  cacheUrl.searchParams.set("rate", parsed.rate || "default");
+  cacheUrl.searchParams.set("pitch", parsed.pitch || "default");
+  const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
+  const cache = (caches as any).default;
+
+  try {
+    // 首先检查边缘节点是否存在缓存
+    const cachedResponse = await cache.match(cacheKey);
+    if (cachedResponse) {
+      // 命中边缘缓存，直接返回 (0 延迟)
+      return cachedResponse;
+    }
+  } catch (e) {
+    // 忽略缓存读取错误
+  }
+
   try {
     const stream = await createAudioStream(parsed);
     const primedStream = await primeAudioStream(stream);
 
-    return new Response(primedStream, {
+    const response = new Response(primedStream, {
       status: 200,
       headers: {
         ...CORS_HEADERS,
         "Content-Type": "audio/mpeg",
+        "Cache-Control": "public, max-age=31536000", // 强制 CDN 缓存 1 年
       },
     });
+
+    // 将原始流克隆一份并放入 Edge Cache 中，这样才不会消耗原始 Response 的 body
+    ctx.waitUntil(cache.put(cacheKey, response.clone()));
+
+    return response;
   } catch {
     return errorResponse(502, "TTS_UPSTREAM_ERROR", "failed to synthesize audio");
   }
